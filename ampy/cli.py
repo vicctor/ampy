@@ -28,8 +28,8 @@ import serial.serialutil
 
 import click
 import dotenv
-from progress_bar import PorgressBar
-from progress_bar import PorgressBarBath
+from ampy.progress_bar import PorgressBar
+from ampy.progress_bar import PorgressBarBath
 
 # Load AMPY_PORT et al from .ampy file
 # Performed here because we need to beat click's decorators.
@@ -85,8 +85,19 @@ def windows_full_port_name(portname):
     help="Delay in seconds before entering RAW MODE (default 0). Can optionally specify with AMPY_DELAY environment variable.",
     metavar="DELAY",
 )
+@click.option(
+    "--esp-uart-mode",
+    "-r",
+    envvar="ESP8266_UART_MODE",
+    is_flag=True,
+    default=False,
+    type=click.BOOL,
+    help="""Run ESP initialization sequence turning turning tx/rx pins into UART mode. More info https://www.forward.com.au/pfod/ESP8266/GPIOpins/index.html.
+    This setup is required in case of minimal wiring as presented here: https://circuitjournal.com/esp8266-with-arduino-ide""",
+    metavar="ESP8266_UART_MODE",
+)
 @click.version_option()
-def cli(port, baud, delay):
+def cli(port, baud, delay, esp_uart_mode):
     """ampy - Adafruit MicroPython Tool
 
     Ampy is a tool to control MicroPython boards over a serial connection.  Using
@@ -98,7 +109,7 @@ def cli(port, baud, delay):
     # windows_full_port_name function).
     if platform.system() == "Windows":
         port = windows_full_port_name(port)
-    _board = pyboard.Pyboard(port, baudrate=baud, rawdelay=delay)
+    _board = pyboard.Pyboard(port, baudrate=baud, rawdelay=delay, esp_uart_on=esp_uart_mode)
 
 
 @cli.command()

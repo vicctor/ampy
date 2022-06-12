@@ -36,7 +36,7 @@ Or:
     python pyboard.py test.py
 
 """
-
+import os
 import sys
 import time
 
@@ -119,7 +119,7 @@ class TelnetToSerial:
             return n_waiting
 
 class Pyboard:
-    def __init__(self, device, baudrate=115200, user='micro', password='python', wait=0, rawdelay=0):
+    def __init__(self, device, baudrate=115200, user='micro', password='python', wait=0, rawdelay=0, esp_uart_on=True):
         global _rawdelay
         _rawdelay = rawdelay
         if device and device[0].isdigit() and device[-1].isdigit() and device.count('.') == 3:
@@ -129,16 +129,24 @@ class Pyboard:
             import serial
             delayed = False
             for attempt in range(wait + 1):
+                print(f"Attempting serial {device} baudrate ${baudrate}")
                 try:
-                    self.serial = serial.Serial(device, baudrate=baudrate, interCharTimeout=1)
-                    break
-                except (OSError, IOError): # Py2 and Py3 have different errors
+                    self.serial = serial.Serial(device, baudrate=baudrate, interCharTimeout=1, exclusive=True)
+                    if (esp_uart_on):
+                        self.turn_esp8266_into_uart_mode()
+
+                    if self.serial.in_waiting:
+                        break
+                    else:
+                        self.serial.close()
+                        continue
+                except (OSError, IOError) as ex: # Py2 and Py3 have different errors
+                    print(f"ERROR: {ex}")
                     if wait == 0:
                         continue
                     if attempt == 0:
                         sys.stdout.write('Waiting {} seconds for pyboard '.format(wait))
                         delayed = True
-                time.sleep(1)
                 sys.stdout.write('.')
                 sys.stdout.flush()
             else:
@@ -147,6 +155,16 @@ class Pyboard:
                 raise PyboardError('failed to access ' + device)
             if delayed:
                 print('')
+
+    def turn_esp8266_into_uart_mode(self):
+        self.serial.rts = 0
+        self.serial.dtr = 1
+        time.sleep(0.2)
+        self.serial.rts = 1
+        time.sleep(0)
+        self.serial.dtr = 0
+        time.sleep(0.2)
+        self.serial.rts = 0
 
     def close(self):
         self.serial.close()
@@ -177,6 +195,9 @@ class Pyboard:
         if _rawdelay > 0:
             time.sleep(_rawdelay)
 
+        n = self.serial.inWaiting()
+        self.flush_serial_input(n)
+
         # ctrl-C twice: interrupt any running program
         self.serial.write(b'\r\x03')
         time.sleep(0.1)
@@ -185,9 +206,8 @@ class Pyboard:
 
         # flush input (without relying on serial.flushInput())
         n = self.serial.inWaiting()
-        while n > 0:
-            self.serial.read(n)
-            n = self.serial.inWaiting()
+
+        self.flush_serial_input(n)
 
         for retry in range(0, 5): 
             self.serial.write(b'\r\x01') # ctrl-A: enter raw REPL
@@ -219,6 +239,11 @@ class Pyboard:
         if not data.endswith(b'raw REPL; CTRL-B to exit\r\n'):
             print(data)
             raise PyboardError('could not enter raw repl')
+
+    def flush_serial_input(self, n):
+        while n > 0:
+            self.serial.read(n)
+            n = self.serial.inWaiting()
 
     def exit_raw_repl(self):
         self.serial.write(b'\r\x02') # ctrl-B: enter friendly REPL
